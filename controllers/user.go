@@ -11,11 +11,14 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"time"
 	"github.com/satori/go.uuid"
+	"strings"
+	"strconv"
 )
 
 const (
 	//  手机号码格式
 	PhonePattern = `^(1[3|4|5|8|6][0-9]\d{8,8})$`
+	JwtAuth      = `Authorization`
 )
 
 var (
@@ -88,12 +91,12 @@ func (u *UserController) Login() {
 	// 设置 auth  响应头消息
 	u.Ctx.ResponseWriter.Header().Set("Authorization", jswt)
 
-	appendJwt(jswt,user)
+	appendJwt(jswt, user)
 }
 
 func (u *UserController) Logout() {
 	auth := u.Ctx.Input.Header("Authorization")
-	delete(gJwt,auth)
+	delete(gJwt, auth)
 }
 
 // 注册
@@ -156,7 +159,7 @@ func (u *UserController) Register() {
 	// 设置 auth  响应头消息
 	u.Ctx.ResponseWriter.Header().Set("Authorization", jswt)
 
-	appendJwt(jswt,user)
+	appendJwt(jswt, user)
 	success := struct {
 		Code    int
 		Message string
@@ -165,6 +168,93 @@ func (u *UserController) Register() {
 		Message: "注册成功",
 	}
 	resData(&u.Controller, success)
+}
+
+// 上传文件到云
+func (this *UserController) CloudStorage() {
+
+	user := ValidUser(this)
+	log.Println("user:", user)
+	file, h, err := this.GetFile("uploadname")
+	if err != nil {
+		log.Println("uploadFile err: ", err)
+		resData(&this.Controller, errmsg)
+		return
+	}
+
+	defer file.Close()
+	if !strings.HasSuffix(h.Filename, ".pdf") {
+		log.Println(" upload is not  *.pdf")
+		resData(&this.Controller, errmsg)
+		return
+	}
+
+	book := models.UploadBook{}
+	book.UserInfo = &user
+	book.BookName = h.Filename
+	book.Size = h.Size
+	book.UploadTime = time.Now()
+	book.SaveName = fmt.Sprintf("%s%d.pdf", strconv.FormatInt(time.Now().Unix(), 10), user.Id)
+
+	err = this.SaveToFile("uploadname", "static/upload/"+book.SaveName) // 保存位置在 static/upload, 没有文件夹要先创建
+
+	if err != nil {
+		log.Println("save file err: ", err)
+		resData(&this.Controller, errmsg)
+		return
+	}
+	_, err = book.Insert()
+
+	if err != nil {
+		log.Println("cs insert upload book err:", err)
+		resData(&this.Controller, errmsg)
+		return
+	}
+
+	// 上传书籍成功
+	resData(&this.Controller, struct {
+		Code    int
+		Message interface{}
+	}{
+		Code:    200,
+		Message: "操作成功",
+	})
+
+}
+
+// 获取上传的文件名列表
+func (this *UserController) PullCloudStorage() {
+	user := ValidUser(this)
+
+	uploadBook, i, err := models.ReadBooksWithUser(user)
+	log.Printf("books %+v , all +%v err %+v user %+v\n", uploadBook, i, err, user)
+	resData(&this.Controller, uploadBook)
+
+}
+
+func ValidUser(this *UserController) (user models.User) {
+
+	auth := this.Ctx.Input.Header(JwtAuth)
+	user, ok := gJwt[auth]
+	// 获取用户登录的凭证失败
+	if !ok {
+		log.Println("err:该用户没有登录")
+		resData(&this.Controller, struct {
+			Message string
+			Code    int
+		}{
+			Message: "该用户没有登录",
+			Code:    400,
+		})
+
+	}
+
+	log.Println("user:", user)
+	if !ok {
+		this.StopRun()
+	}
+	return user
+
 }
 
 // 正则 检验
@@ -217,7 +307,7 @@ func updateJwt(newjswt, oldjwt string) {
 }
 
 // 添加新的用户
-func appendJwt(jswt string , user models.User)  {
+func appendJwt(jswt string, user models.User) {
 
 	gJwt[jswt] = user
 	log.Println(len(gJwt))

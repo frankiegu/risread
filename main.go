@@ -12,13 +12,14 @@ import (
 )
 
 func init() {
-	initDataBaseMysql(true,"mysql",&models.User{})
+	initDataBaseMysql(true,"mysql",&models.User{},&models.UploadBook{})
 }
 
 func main() {
 
 	configApp()
-
+	// 设置静态文件
+	beego.SetStaticPath("/static/*","static")
 	beego.Run()
 }
 
