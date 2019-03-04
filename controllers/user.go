@@ -43,7 +43,7 @@ type UserController struct {
 func (u *UserController) Login() {
 	lp := struct {
 		Phone    string `json:"phone"`
-		Password string `json:"password"`
+		Password string `json:"pass_word"`
 	}{}
 
 	// 反序列化请求数据
@@ -92,6 +92,17 @@ func (u *UserController) Login() {
 	u.Ctx.ResponseWriter.Header().Set("Authorization", jswt)
 
 	appendJwt(jswt, user)
+
+	u.Data["json"] = struct {
+		Code          int    `json:"code"`
+		Detail        string `json:"detail"`
+		Authorization string
+	}{
+		Code:200,
+		Authorization:jswt,
+		Detail:"pass",
+	}
+	u.ServeJSON(true)
 }
 
 func (u *UserController) Logout() {
