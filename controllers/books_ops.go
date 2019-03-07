@@ -515,7 +515,10 @@ func (this *BookOps) FetchOwnBookList() {
 
 	user, ok := gJwt[authorization]
 	if !ok {
-		this.Abort("404")
+		fmt.Println("用户登录过期. fetchOwnBookList ")
+		this.Data["json"] = loginOutTime
+		this.ServeJSON(true)
+
 		return
 	}
 	dp := []struct {
@@ -545,18 +548,39 @@ func (this *BookOps) FetchOwnBookList() {
 
 // 添加书籍的评论
 func (this *BookOps) CreateBookInfoComment() {
+
+	authorization := this.Ctx.Input.Header("authorization")
+
+	user, ok := gJwt[authorization]
+	if !ok {
+		fmt.Println("用户登录过期. fetchOwnBookList ")
+		this.Data["json"] = loginOutTime
+		this.ServeJSON(true)
+
+		return
+	}
+
 	dp := struct {
 		BookInfoId int64  `json:"book_info_id"`
 		Content    string `json:"content"`
 		UserInfoId int64  `json:"user_info_id"`
 	}{}
-	fmt.Println(dp)
+
 	var err error
 	err = json.Unmarshal(this.Ctx.Input.RequestBody, &dp)
-	if err != nil {
-		fmt.Println("parse CreateBookInfoComment err ", err)
+
+	fmt.Println(dp)
+	if err != nil  || len(dp.Content) == 0 {
+		fmt.Println("parse CreateBookInfoComment err 获取提交的内容有无", err, dp )
+		this.Data["json"] =paramsErr
+		this.ServeJSON(true)
+
 		return
 	}
+
+	// 赋值用户Id
+	dp.UserInfoId = user.Id
+
 
 	bookInfoComment := models.BookInfoComment{
 		UserInfo:    &models.User{Id: dp.UserInfoId},
@@ -568,9 +592,15 @@ func (this *BookOps) CreateBookInfoComment() {
 	id, err := bookInfoComment.Insert()
 	if err != nil {
 		fmt.Println("bookInfoComment insert err:", err)
+		this.Data["json"] = missErr
+		this.ServeJSON(true)
 		return
 	}
+	bookInfoComment.UserInfo = &user
 
+	// 返回用户评论的内容
+	this.Data["json"] = models.MessageResponse{Code:200,Message:bookInfoComment}
+	this.ServeJSON(true)
 	fmt.Println("id ", id, "bookInfoComment ", bookInfoComment)
 
 }
