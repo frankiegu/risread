@@ -348,6 +348,7 @@ func (this *BookOps) FetchUserBookList() {
 	return
 
 }
+
 // 测试通过  2019年3月6日 18点53分
 
 // 获取书单的详细消息
@@ -384,18 +385,19 @@ func (this *BookOps) FetchBookDetail() {
 		"T2.book_list_id = T1.id AND T1.id =?";
 	n, err := orm.NewOrm().Raw(sql, listId).QueryRows(&dp)
 	if err != nil {
-		fmt.Println("err: ",err)
+		fmt.Println("err: ", err)
 		this.Data["json"] = missErr
 		this.ServeJSON(true)
 		return
 	}
 	fmt.Println("query num: ", n)
 	this.Data["json"] = dp
-	this.ServeJSON(true )
+	this.ServeJSON(true)
 	return
 
 }
 
+// 测试通过 2019年3月7日 14点21分
 // 添加书籍到书单
 func (this *BookOps) AddBook2BookList() {
 
@@ -404,6 +406,30 @@ func (this *BookOps) AddBook2BookList() {
 		BookInfoId int64 `json:"book_info_id"`
 	}{}
 	fmt.Println(dp)
+	var err error
+	err = json.Unmarshal(this.Ctx.Input.RequestBody, &dp)
+	if err != nil {
+		fmt.Println("反序列化 添加书籍到书单 : ", err)
+		this.Data["json"] = paramsErr
+		this.ServeJSON(true)
+		return
+	}
+	//bookList := models.BookList{Id:dp.BookListId}
+
+	// 将数据插入到数据库
+	//orm.NewOrm().QueryM2M(&bookList,"bookInfo").Add()
+	result, err := orm.NewOrm().Raw("INSERT INTO book_list_book_infos (book_list_id,book_info_id) values (? , ? )").SetArgs(dp.BookListId, dp.BookInfoId).Exec()
+	if err !=nil {
+		fmt.Println("insert into book_list_book_infos err : ",err)
+		this.Data["json"] = missErr
+		this.ServeJSON(true)
+		return
+	}
+
+
+	fmt.Println("insert into book_list_book_infos ",result)
+	this.Data["json"] = models.MessageResponse{Code:200,Message:"ok"}
+	this.ServeJSON(true)
 }
 
 // 创建书单
@@ -765,17 +791,17 @@ func (this *BookOps) DPImg() {
 
 // 测试通过 2019年3月7日 13点29分
 // 查看可用提交的书单类型
-func(this *BookOps)BookListTypes(){
+func (this *BookOps) BookListTypes() {
 	var bookListTypes [] models.BookListType
 	n, err := orm.NewOrm().Raw("SELECT T0.id , T0.name FROM book_list_type AS T0 ").QueryRows(&bookListTypes)
-	if err !=nil {
-		fmt.Println("query bookList type err : ",err )
+	if err != nil {
+		fmt.Println("query bookList type err : ", err)
 		this.Data["json"] = missErr
 		this.ServeJSON(true)
 		return
 	}
-	fmt.Println("query data num : ",n )
-	this.Data["json"]= bookListTypes
+	fmt.Println("query data num : ", n)
+	this.Data["json"] = bookListTypes
 	this.ServeJSON(true)
 	return
 }
