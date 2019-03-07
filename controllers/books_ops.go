@@ -401,6 +401,18 @@ func (this *BookOps) FetchBookDetail() {
 // 添加书籍到书单
 func (this *BookOps) AddBook2BookList() {
 
+	authorization := this.Ctx.Input.Header("authorization")
+	_, ok := gJwt[authorization]
+	if !ok {
+		fmt.Println("user not load ")
+		// 登录过期
+		this.Data["json"] = loginOutTime
+		this.ServeJSON(true)
+		this.StopRun()
+		return
+
+	}
+
 	dp := struct {
 		BookListId int64 `json:"book_list_id"`
 		BookInfoId int64 `json:"book_info_id"`
