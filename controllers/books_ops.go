@@ -431,19 +431,19 @@ func (this *BookOps) AddBook2BookList() {
 	// 将数据插入到数据库
 	//orm.NewOrm().QueryM2M(&bookList,"bookInfo").Add()
 	result, err := orm.NewOrm().Raw("INSERT INTO book_list_book_infos (book_list_id,book_info_id) values (? , ? )").SetArgs(dp.BookListId, dp.BookInfoId).Exec()
-	if err !=nil {
-		fmt.Println("insert into book_list_book_infos err : ",err)
+	if err != nil {
+		fmt.Println("insert into book_list_book_infos err : ", err)
 		this.Data["json"] = missErr
 		this.ServeJSON(true)
 		return
 	}
 
-
-	fmt.Println("insert into book_list_book_infos ",result)
-	this.Data["json"] = models.MessageResponse{Code:200,Message:"ok"}
+	fmt.Println("insert into book_list_book_infos ", result)
+	this.Data["json"] = models.MessageResponse{Code: 200, Message: "ok"}
 	this.ServeJSON(true)
 }
 
+// 测试通过 2019年3月7日 15点17分
 // 创建书单
 func (this *BookOps) CreateBookList() {
 	dp := struct {
@@ -455,14 +455,21 @@ func (this *BookOps) CreateBookList() {
 	}{}
 
 	err := json.Unmarshal(this.Ctx.Input.RequestBody, &dp)
+
+	// 反序列化用户提交书籍
 	if err != nil {
 		fmt.Println("parse CreateBookList err:", err)
+		this.Data["json"] = paramsErr
+		this.ServeJSON(true)
 		return
 	}
+
 	authorization := this.Ctx.Input.Header("authorization")
 	user, ok := gJwt[authorization]
 	if !ok {
-		this.Abort("404")
+		fmt.Println("用户登录过期,,,, ")
+		this.Data["json"] = loginOutTime
+		this.ServeJSON(true)
 		return
 	}
 	bookList := &models.BookList{}
@@ -471,20 +478,27 @@ func (this *BookOps) CreateBookList() {
 	bookList.Instruction = dp.Instruction
 	bookList.Name = dp.Name
 	bookList.Publish = dp.Publish
+	if len(bookList.Name) == 0 || dp.TypeId == 0 {
+		fmt.Println("提取的用户数据有误", dp )
+		this.Data["json"] = paramsErr
+		this.ServeJSON(true)
+		return
+	}
 	bookList.BookListType = &models.BookListType{Id: dp.TypeId}
 	id, err := bookList.Insert()
+
+	// 书单持久化到数据库失败
 	if err != nil {
 		fmt.Println("insert bookListError err:", err)
+		this.Data["json"] = missErr
+		this.ServeJSON(true)
 		return
 	}
 	fmt.Println("id ", id, " bookList ", bookList)
 
-	this.Data["json"] = struct {
-		Code       int
-		BookListId int64
-	}{
-		Code:       200,
-		BookListId: id,
+	this.Data["json"] = models.MessageResponse{
+		Code:    200,
+		Message: id,
 	}
 	this.ServeJSON(true)
 	return
