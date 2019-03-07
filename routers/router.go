@@ -34,6 +34,8 @@ func init() {
 			// 获取书单的评论
 			beego.NSRouter("/bookListComments", &controllers.BookOps{}, "get:FetchBookListComments"),
 
+			// 获取书单的书籍消息 (获取的是用户公开的书籍消息)
+			beego.NSRouter("/bookListDetail", &controllers.BookOps{},"get:FetchBookDetail"),
 			// 获取用户自己的书单
 			beego.NSRouter("/ownBookLists",&controllers.BookOps{},"get:FetchOwnBookList"),
 			// 获取用户的书单

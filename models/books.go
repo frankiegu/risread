@@ -111,6 +111,9 @@ func (this *BookType) Insert() (id int64, err error) {
 	return orm.NewOrm().Insert(this)
 }
 
+func (this *BookType)Read(cols... string ) (err error) {
+	return orm.NewOrm().Read(this, cols ... )
+}
 // 书籍的基本信息
 type BookInfo struct {
 	Id              int64

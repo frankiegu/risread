@@ -5,11 +5,11 @@ import "github.com/astaxie/beego/orm"
 type User struct {
 	Id       int64
 	Username string
-	Phone    string
-	Password string
+	Phone    string `json:"-"`
+	Password string `json:"-"`
 	Gender   string `orm:default("不公开")`
 	//Address string
-	Email     string
+	Email     string `json:"-"`
 	Riches    int // 用户积分
 	Signature string
 }

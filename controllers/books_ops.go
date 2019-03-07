@@ -9,7 +9,78 @@ import (
 	"github.com/astaxie/beego/orm"
 	"crypto/md5"
 	"strings"
+	"sync"
+	"os"
+	"io/ioutil"
 )
+
+var (
+	// 登录过期
+	loginOutTime = models.MessageResponse{Code: 409, Message: "登录过期"}
+	// 权限不足
+	permissionDefined = models.MessageResponse{Code: 403, Message: "权限不足"}
+
+	// 未知错误
+	missErr = models.MessageResponse{Code: 509, Message: "未知错误"}
+	// 参数错误
+	paramsErr = models.MessageResponse{Code: 401, Message: "参数错误"}
+)
+
+var (
+	once     sync.Once
+	once2Jwt sync.Once
+	debug    = true
+)
+
+func init() {
+	go once2Jwt.Do(fetchJson2map)
+
+	go once.Do(putTheData2json)
+}
+
+func fetchJson2map() {
+	file, _ := os.OpenFile("./conf/jwt.json", os.O_RDONLY, 0766)
+	bytes, err := ioutil.ReadAll(file)
+	if err != nil {
+		fmt.Println(err)
+		panic(err)
+	}
+
+	err = json.Unmarshal(bytes, &gJwt)
+	if err != nil {
+		fmt.Println("err ", err)
+		panic(err)
+	}
+
+}
+
+func putTheData2json() {
+
+	fmt.Println("putTheData2json")
+
+	if debug {
+
+		for {
+			file, _ := os.OpenFile("./conf/jwt.json", os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0766)
+
+			bytes, err := json.Marshal(gJwt)
+			if err != nil {
+				fmt.Println("err: ", err)
+				//panic(err)
+			}
+			n, err := file.Write(bytes)
+			if err != nil {
+				fmt.Println("er", err)
+				panic(err)
+			}
+			fmt.Println("write ", n)
+			file.Close()
+			time.Sleep(time.Second * 5)
+
+		}
+	}
+
+}
 
 type BookOps struct {
 	beego.Controller
@@ -52,33 +123,50 @@ func (this *BookOps) CommitBookInfo() {
 	user, ok := gJwt[authorization]
 	if !ok {
 		fmt.Println("user not load ")
-		this.Abort("407")
+		this.Data["json"] = loginOutTime
+		this.ServeJSON(true)
+		return
+
+	}
+
+	var err error
+
+	dp.Reward, err = this.GetInt("reward", -1)
+	if err != nil {
+		this.Data["json"] = paramsErr
+		this.ServeJSON(true)
+		return
+
+	}
+	dp.Link = this.GetString("link", "")
+	dp.Author = this.GetString("author", "")
+	dp.Introduction = this.GetString("instruction", "")
+	dp.Name = this.GetString("name", "")
+	dp.Copyright = this.GetString("copyright", "")
+	typeId, err := this.GetInt64("type_id", -1)
+	if err != nil {
+		fmt.Println("err : type ", err)
+		this.Data["json"] = paramsErr
+		this.ServeJSON(true)
 		return
 	}
-	dp.Reward ,_= this.GetInt("reward",-1)
-	dp.Link = this.GetString("link","")
-	dp.Author = this.GetString("author","")
-	dp.Introduction = this.GetString("instruction","")
-	dp.Name = this.GetString("name","")
-	dp.Copyright = this.GetString("copyright","")
+
+	bookType := models.BookType{Id: typeId}
+	// 读取图书类型
+	err = bookType.Read("id")
+	if err != nil {
+		fmt.Println("读取图书类型失败 err: ", err)
+		this.Data["json"] = missErr
+		this.ServeJSON(true)
+		return
+	}
+
 	dp.PublishTime = time.Now()
-	dp.BookType =&models.BookType{Id:2}
+	dp.BookType = &bookType
 
-	//err := json.Unmarshal(this.Ctx.Input.RequestBody, &dp)
-	//	//
-	//	//if err !=nil {
-	//	//	fmt.Println("fetch data err ",err )
-	//	//	this.Abort("403")
-	//	//	return
-	//	//}
 	dp.UserInfo = &user
-	//if dp.Name == "" || dp.Link == "" || dp.Reward <=0 ||dp.Reward>10 {
-	//	fmt.Println("error ")
-	//	this.Abort("403")
-	//	return
-	//}
 
-	fmt.Printf("book info %+v \n",dp )
+	fmt.Printf("book info %+v \n", dp)
 	// 保存封面
 	cover, hCover, err := this.GetFile("cover")
 	if err != nil {
@@ -97,24 +185,24 @@ func (this *BookOps) CommitBookInfo() {
 	splits := strings.Split(hCover.Filename, ".")
 	//
 	if len(splits) != 2 {
-		fmt.Println("file error : ", "len is not 2 ",hCover.Filename)
+		fmt.Println("file error : ", "len is not 2 ", hCover.Filename)
 		this.Abort("403")
 		return
 	}
-	CoverUrl :="static/img/" + builder.String() + "." + splits[1]
+	CoverUrl := "static/img/" + builder.String() + "." + splits[1]
 	// dp 保存数据信息
 
 	// 保存图片文件..
 	err = this.SaveToFile("cover", CoverUrl) // 保存位置在 static/upload, 没有文件夹要先创建
-	if err !=nil {
-		fmt.Println("save file error ",err)
+	if err != nil {
+		fmt.Println("save file error ", err)
 		this.Abort("403")
 		return
 	}
 
 	pdfFile, pdfHeader, err := this.GetFile("pdf")
-	if err !=nil {
-		fmt.Println("err: ",err)
+	if err != nil {
+		fmt.Println("err: ", err)
 		this.Abort("403")
 		return
 	}
@@ -122,9 +210,9 @@ func (this *BookOps) CommitBookInfo() {
 
 	hash.Reset()
 	hash.Write([]byte(time.Now().String()))
-	bytes = hash.Sum(nil )
+	bytes = hash.Sum(nil)
 	builder.Reset()
-	fmt.Fprintf(&builder,"%x",bytes)
+	fmt.Fprintf(&builder, "%x", bytes)
 
 	splits = strings.Split(pdfHeader.Filename, ".")
 	//
@@ -134,10 +222,10 @@ func (this *BookOps) CommitBookInfo() {
 		return
 	}
 
-	pdfUrl :="static/upload/" + builder.String() + "." + splits[1]
+	pdfUrl := "static/upload/" + builder.String() + "." + splits[1]
 	// 保存 上传的文件资源
-	err=this.SaveToFile("pdf",pdfUrl)
-	if err !=nil {
+	err = this.SaveToFile("pdf", pdfUrl)
+	if err != nil {
 		fmt.Println("err save pdf err ")
 		this.Abort("403")
 		return
@@ -146,57 +234,165 @@ func (this *BookOps) CommitBookInfo() {
 	dp.SaveName = pdfUrl
 	dp.Cover = CoverUrl
 	id, err := dp.Insert()
-	if err !=nil {
-		fmt.Println("err:",err)
+	if err != nil {
+		fmt.Println("err:", err)
 		this.Abort("403")
 		return
 	}
 
-	fmt.Println("ok ",dp )
+	fmt.Println("ok ", dp)
 	dp.Id = id
 	this.Data["json"] = dp
-	this.ServeJSON(true )
+	this.ServeJSON(true)
 
 }
 
+// 测试通过 2019年3月6日 18点15分
 // 获取书单的评论
 func (this *BookOps) FetchBookListComments() {
+	authorization := this.Ctx.Input.Header("authorization")
+	_, ok := gJwt[authorization]
+	if !ok {
+		fmt.Println("user not load ")
+		// 登录过期
+		this.Data["json"] = loginOutTime
+		this.ServeJSON(true)
+		this.StopRun()
+		return
 
-}
+	}
+	var err error
+	bkId, err := this.GetInt64("bookId", -1)
 
-// 获取用户的书单
-func (this *BookOps) FetchUserBookList() {
-	uid, err := this.GetInt64("uid", -1)
-	if err != nil {
-		fmt.Println("getUid err:", err)
+	// 获取书籍的id 失败
+	if err != nil || bkId == -1 {
+		this.Data["json"] = paramsErr
+		this.ServeJSON(true)
 		return
 	}
-	//bookLists :=make([]*models.BookList,0)
-	bookLists, err := models.FetchBookListByUid(uid)
+	dp := []struct {
+		Id          int64     `json:"id"`
+		UserInfoId  int64     `json:"user_info_id"`
+		Cover       string    `json:"cover"`
+		Content     string    `json:"content"`
+		PublishTime time.Time `json:"publish_time"`
+	}{}
+	sql := "SELECT T0.id , T0.content , T0.publish_time , T0.user_info_id, T1.cover ,T1.username FROM book_info_comment AS T0 , user_info AS T1 WHERE T0.user_info_id = T1.id AND T0.book_info_id = ? ORDER BY T0.publish_time DESC ";
+
+	// 从数据库中读取
+	n, err := orm.NewOrm().Raw(sql, bkId).QueryRows(&dp)
 	if err != nil {
-		fmt.Println("fetchBookError ", err)
+		fmt.Println("err query  ", err)
+		this.Data["json"] = missErr
+		this.ServeJSON(true)
 		return
 	}
 
-	for _, v := range bookLists {
-		fmt.Printf("value =%+v\n", v)
-	}
-	this.Data["json"] = bookLists
+	fmt.Println("read data ", n)
+	this.Data["json"] = dp
 	this.ServeJSON(true)
 	return
 
 }
 
-// 获取书单的详细消息
-func (this *BookOps) FetchBookDetail() {
-	// 获取书单的id
-	listId, err := this.GetInt64("listId", -1)
-	if err != nil {
-		fmt.Println("getBookListId err ", err)
+// 测试通过 2019年3月6日 18点34分
+//
+// 获取用户的书单
+// 获取用户的书单用户的书单是 公开的
+func (this *BookOps) FetchUserBookList() {
+
+	authorization := this.Ctx.Input.Header("authorization")
+	_, ok := gJwt[authorization]
+	if !ok {
+		fmt.Println("user not load ")
+		// 登录过期
+		this.Data["json"] = loginOutTime
+		this.ServeJSON(true)
+		this.StopRun()
+		return
+
+	}
+
+	uid, err := this.GetInt64("uid", -1)
+	if err != nil || uid == -1 {
+		fmt.Println("getUid err:", err)
+		this.Data["json"] = paramsErr
+		this.ServeJSON(true)
 		return
 	}
 
-	fmt.Println("listId ", listId)
+	sql := "SELECT T0.id , T0.name , T0.instruction , T0.publish_time , T1.name AS type_name FROM book_list AS T0 , book_list_type AS T1 WHERE T0.book_list_type_id = T1.id AND T0.publish = 1 AND T0.user_info_id =?";
+	//bookLists :=make([]*models.BookList,0)
+	dp := [] struct {
+		Id          int64  `json:"id"`
+		Name        string `json:"name"`
+		Instruction string `json:"instruction"`
+		PublishTime time.Time
+		TypeName    string `json:"type_name"`
+	}{}
+	n, err := orm.NewOrm().Raw(sql, uid).QueryRows(&dp)
+	if err != nil {
+		fmt.Println("query err ", err)
+		this.Data["json"] = missErr
+		this.ServeJSON(true)
+		return
+	}
+
+	fmt.Println("query num ", n)
+	for _, v := range dp {
+		fmt.Println(v)
+	}
+	this.Data["json"] = dp
+	this.ServeJSON(true)
+	return
+
+}
+// 测试通过  2019年3月6日 18点53分
+
+// 获取书单的详细消息
+func (this *BookOps) FetchBookDetail() {
+	authorization := this.Ctx.Input.Header("authorization")
+	_, ok := gJwt[authorization]
+	if !ok {
+		fmt.Println("user not load ")
+		// 登录过期
+		this.Data["json"] = loginOutTime
+		this.ServeJSON(true)
+		this.StopRun()
+		return
+
+	}
+
+	// 获取书单的id
+	listId, err := this.GetInt64("bkId", -1)
+	if err != nil || listId == -1 {
+		fmt.Println("getBookListId err ", err)
+		this.Data["json"] = paramsErr
+		this.ServeJSON(true)
+		return
+	}
+
+	dp := []struct {
+		Id          int64  `json:"id"`
+		Name        string `json:"name"`
+		Cover       string `json:"cover"`
+		Instruction string `json:"instruction"`
+	}{}
+	sql := "SELECT T0.id , T0.name , T0.cover FROM book_info AS T0 , book_list AS T1 , " +
+		" book_list_book_infos AS T2 WHERE T1.publish = 1 AND T2.book_info_id = T0.id AND " +
+		"T2.book_list_id = T1.id AND T1.id =?";
+	n, err := orm.NewOrm().Raw(sql, listId).QueryRows(&dp)
+	if err != nil {
+		fmt.Println("err: ",err)
+		this.Data["json"] = missErr
+		this.ServeJSON(true)
+		return
+	}
+	fmt.Println("query num: ", n)
+	this.Data["json"] = dp
+	this.ServeJSON(true )
+	return
+
 }
 
 // 添加书籍到书单
@@ -387,8 +583,21 @@ func (this *BookOps) FetchBookInfoComments() {
 
 // 提交书籍的评论消息
 func (this *BookOps) CommitBookInfoComment() {
+
+	authorization := this.Ctx.Input.Header("authorization")
+	user, ok := gJwt[authorization]
+	if !ok {
+		fmt.Println("user not load ")
+		// 登录过期
+		this.Data["json"] = loginOutTime
+		this.ServeJSON(true)
+		this.StopRun()
+		return
+
+	}
+
 	dp := struct {
-		UserInfoId int    `json:"user_info_id"`
+		UserInfoId int64  `json:"user_info_id"`
 		BookInfoId int    `json:"book_info_id"`
 		Content    string `json:"content"`
 	}{}
@@ -397,9 +606,13 @@ func (this *BookOps) CommitBookInfoComment() {
 
 	if err != nil {
 		fmt.Println("parse CommitBookInfoComment err: ", err)
+		// 参数错误
+		this.Data["json"] = paramsErr
+		this.ServeJSON(true)
 		return
 	}
-
+	// 设置用户的id
+	dp.UserInfoId = user.Id
 	//	 持久化
 	bookInfoComment := models.BookInfoComment{}
 	bookInfoComment.UserInfo = &models.User{Id: int64(dp.UserInfoId)}
@@ -413,16 +626,60 @@ func (this *BookOps) CommitBookInfoComment() {
 		return
 	}
 	fmt.Println(bookInfoComment.Id, id)
+	messageResponse := models.MessageResponse{
+		Code:    200,
+		Message: "发送成功",
+	}
+	this.Data["json"] = messageResponse
+	this.ServeJSON(true)
 	return
 }
 
 // 根据书单获取书籍list
 func (this *BookOps) FetchBooksByBookListId() {
+	// 获取书单的id
 	bkId, err := this.GetInt64("bkId", -1)
-	if err != nil {
-		fmt.Println("get bkId err: ", err)
+
+	// 获取参数错误, 或者值为默认值
+	if err != nil || bkId == -1 {
+		this.Data["json"] = missErr
+		this.ServeJSON(true)
+		this.StopRun()
 		return
 	}
+
+	bookList := models.BookList{Id: bkId}
+	err = bookList.Read("id")
+
+	if err != nil && err == orm.ErrNoRows {
+		this.Data["json"] = missErr
+		this.ServeJSON(true)
+		this.StopRun()
+		return
+
+	}
+
+	if err != nil {
+		fmt.Println("get bkId err: ", err)
+
+		this.Data["json"] = paramsErr
+		this.ServeJSON(true)
+		this.StopRun()
+		return
+	}
+
+	authorization := this.Ctx.Input.Header("authorization")
+	_, ok := gJwt[authorization]
+	if !ok {
+		fmt.Println("user not load ")
+		// 登录过期
+		this.Data["json"] = loginOutTime
+		this.ServeJSON(true)
+		this.StopRun()
+		return
+
+	}
+
 	var bk [] struct {
 		Name      string `json:"name"`
 		Link      string `json:"link"`
