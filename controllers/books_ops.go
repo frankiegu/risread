@@ -87,8 +87,20 @@ type BookOps struct {
 	beego.Controller
 }
 
+// 测试通过 2019年3月7日 16点19分
+
 // 书单的评论
 func (this *BookOps) CommitBookListComment() {
+	authorization := this.Ctx.Input.Header("authorization")
+	user, ok := gJwt[authorization]
+	if !ok {
+		fmt.Println("user not load ")
+		this.Data["json"] = loginOutTime
+		this.ServeJSON(true)
+		return
+
+	}
+
 	dp := struct {
 		UserInfoId int64  `json:"user_info_id"`
 		BookListId int64  `json:"book_list_id"`
@@ -97,12 +109,17 @@ func (this *BookOps) CommitBookListComment() {
 
 	var err error
 	err = json.Unmarshal(this.Ctx.Input.RequestBody, &dp)
-	if err != nil {
-		fmt.Println("parse CommitBookListComment err:", err)
+	// 序列化 评论的内容 出错或者 评论的内容为空都为错
+	// 书单的列表为空也表示有错误
+	if err != nil || len(dp.Content) == 0 || dp.BookListId == 0  {
+		fmt.Println("parse CommitBookListComment err:", err,dp)
+		this.Data["json"] = paramsErr
+		this.ServeJSON(true)
 		return
 	}
 	bookListComment := models.BookListComment{
-		UserInfo:    &models.User{Id: dp.UserInfoId},
+		// 增加用户的id
+		UserInfo:    &models.User{Id: user.Id},
 		BookList:    &models.BookList{Id: dp.BookListId},
 		Content:     dp.Content,
 		PublishTime: time.Now(),
@@ -111,9 +128,13 @@ func (this *BookOps) CommitBookListComment() {
 	id, err := bookListComment.Insert()
 	if err != nil {
 		fmt.Println("insert book list comment err:", err)
+		this.Data["json"] = missErr
+		this.ServeJSON(true)
 		return
 	}
 	fmt.Println("id :", id)
+	this.Data["json"] = models.MessageResponse{Code:200,Message:bookListComment}
+	this.ServeJSON(true)
 
 }
 
@@ -546,6 +567,7 @@ func (this *BookOps) FetchOwnBookList() {
 	return
 }
 
+// 测试 通过 2019年3月7日 15点36分
 // 添加书籍的评论
 func (this *BookOps) CreateBookInfoComment() {
 
@@ -610,6 +632,8 @@ func (this *BookOps) FetchBookInfoComments() {
 	bookCID, err := this.GetInt64("bookInfoComId", -1)
 	if err != nil {
 		fmt.Println("getBookCID err: ", err)
+		this.Data["json"] = paramsErr
+		this.ServeJSON(true)
 		return
 	}
 
@@ -657,11 +681,17 @@ func (this *BookOps) FetchBookInfoComments() {
 
 	if err != nil {
 		fmt.Println("error ", err, n)
+		this.Data["json"] = missErr
+		this.ServeJSON(true)
 		return
 	}
 	fmt.Println(n)
-	this.Data["json"] = bookInfoComments
+	this.Data["json"] = models.MessageResponse{
+		Code :200,
+		Message:bookInfoComments,
+	}
 	this.ServeJSON(true)
+	return
 }
 
 // 提交书籍的评论消息
@@ -778,7 +808,7 @@ func (this *BookOps) FetchBooksByBookListId() {
 		"WHERE T0.id = T2.book_info_id AND T1.id = t2.book_list_id AND T1.id = ?"
 	i, e := orm.NewOrm().Raw(sql, bkId).QueryRows(&bk)
 	fmt.Println(i, e)
-	this.Data["json"] = bk
+	this.Data["json"] = models.MessageResponse{Code:200,Message:bk }
 	this.ServeJSON(true)
 
 }
