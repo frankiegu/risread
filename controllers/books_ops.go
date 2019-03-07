@@ -68,12 +68,13 @@ func putTheData2json() {
 				fmt.Println("err: ", err)
 				//panic(err)
 			}
-			n, err := file.Write(bytes)
+			_, err = file.Write(bytes)
 			if err != nil {
 				fmt.Println("er", err)
 				panic(err)
 			}
-			fmt.Println("write ", n)
+
+			//fmt.Println("write ", n)
 			file.Close()
 			time.Sleep(time.Second * 5)
 
@@ -760,4 +761,21 @@ func (this *BookOps) DPImg() {
 	this.SaveToFile("img", dp.Cover) // 保存位置在 static/upload, 没有文件夹要先创建
 	this.Data ["json"] = dp
 	this.ServeJSON(true)
+}
+
+// 测试通过 2019年3月7日 13点29分
+// 查看可用提交的书单类型
+func(this *BookOps)BookListTypes(){
+	var bookListTypes [] models.BookListType
+	n, err := orm.NewOrm().Raw("SELECT T0.id , T0.name FROM book_list_type AS T0 ").QueryRows(&bookListTypes)
+	if err !=nil {
+		fmt.Println("query bookList type err : ",err )
+		this.Data["json"] = missErr
+		this.ServeJSON(true)
+		return
+	}
+	fmt.Println("query data num : ",n )
+	this.Data["json"]= bookListTypes
+	this.ServeJSON(true)
+	return
 }

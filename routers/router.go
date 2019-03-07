@@ -54,6 +54,9 @@ func init() {
 
 			// 上传书籍资料
 			beego.NSRouter("/commitBookInfo",&controllers.BookOps{},"post:CommitBookInfo"),
+
+			// 获取书单类型的消息
+			beego.NSRouter("/bookListTypes",&controllers.BookOps{},"get:BookListTypes"),
 		),
 
 	)
