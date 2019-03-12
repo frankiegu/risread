@@ -27,8 +27,8 @@ func ReadBooksWithUser(user User) (uploadBook []*UploadBook, i int64, err error)
 
 // 书单的类型
 type BookListType struct {
-	Id   int
-	Name string
+	Id   int    `json:"id"`
+	Name string `json:"name"`
 }
 
 // 书单
@@ -111,9 +111,10 @@ func (this *BookType) Insert() (id int64, err error) {
 	return orm.NewOrm().Insert(this)
 }
 
-func (this *BookType)Read(cols... string ) (err error) {
-	return orm.NewOrm().Read(this, cols ... )
+func (this *BookType) Read(cols ... string) (err error) {
+	return orm.NewOrm().Read(this, cols ...)
 }
+
 // 书籍的基本信息
 type BookInfo struct {
 	Id              int64
@@ -141,12 +142,12 @@ func (this *BookInfo) Insert() (id int64, err error) {
 
 // 书籍的评论
 type BookInfoComment struct {
-	Id          int64
-	UserInfo    *User     `orm:"rel(fk); reverse(one);"  `
+	Id          int64     `json:"id"`
+	UserInfo    *User     `orm:"rel(fk); reverse(one);" json:"user_info" `
 	BookInfo    *BookInfo `orm:"rel(fk);reverse(one)" json:"-"`
-	Content     string
-	PublishTime time.Time
-	ScanTimes   int
+	Content     string    `json:"content"`
+	PublishTime time.Time `json:"publish_time"`
+	ScanTimes   int       `json:"scan_times"`
 }
 
 func (this *BookInfoComment) Insert() (id int64, err error) {

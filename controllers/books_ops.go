@@ -12,6 +12,7 @@ import (
 	"sync"
 	"os"
 	"io/ioutil"
+	"path"
 )
 
 var (
@@ -111,8 +112,8 @@ func (this *BookOps) CommitBookListComment() {
 	err = json.Unmarshal(this.Ctx.Input.RequestBody, &dp)
 	// 序列化 评论的内容 出错或者 评论的内容为空都为错
 	// 书单的列表为空也表示有错误
-	if err != nil || len(dp.Content) == 0 || dp.BookListId == 0  {
-		fmt.Println("parse CommitBookListComment err:", err,dp)
+	if err != nil || len(dp.Content) == 0 || dp.BookListId == 0 {
+		fmt.Println("parse CommitBookListComment err:", err, dp)
 		this.Data["json"] = paramsErr
 		this.ServeJSON(true)
 		return
@@ -133,7 +134,7 @@ func (this *BookOps) CommitBookListComment() {
 		return
 	}
 	fmt.Println("id :", id)
-	this.Data["json"] = models.MessageResponse{Code:200,Message:bookListComment}
+	this.Data["json"] = models.MessageResponse{Code: 200, Message: bookListComment}
 	this.ServeJSON(true)
 
 }
@@ -166,7 +167,7 @@ func (this *BookOps) CommitBookInfo() {
 	dp.Name = this.GetString("name", "")
 	dp.Copyright = this.GetString("copyright", "")
 	typeId, err := this.GetInt64("type_id", -1)
-	if err != nil {
+	if err != nil || typeId == -1 {
 		fmt.Println("err : type ", err)
 		this.Data["json"] = paramsErr
 		this.ServeJSON(true)
@@ -193,32 +194,38 @@ func (this *BookOps) CommitBookInfo() {
 	cover, hCover, err := this.GetFile("cover")
 	if err != nil {
 		fmt.Println("get file err ", err)
-		this.Abort("401")
+		this.Data["json"] = paramsErr
+		this.ServeJSON(true)
 		return
 	}
-	defer cover.Close()
 
+	imageFileName := path.Base(hCover.Filename)
+	if ! strings.HasSuffix(imageFileName, ".png") && ! strings.HasSuffix(imageFileName, ".jpg") {
+		fmt.Println("图片格式 错误..... ", hCover.Filename)
+		this.Data["json"] = paramsErr
+		this.ServeJSON(true)
+		return
+	}
+
+	defer cover.Close()
+	fmt.Println("hcover ", hCover.Filename)
 	hash := md5.New()
 	hash.Write([]byte(time.Now().String()))
 	bytes := hash.Sum(nil)
 	builder := strings.Builder{}
 	fmt.Fprintf(&builder, "%x", bytes)
 	fmt.Println("s ", builder.String())
-	splits := strings.Split(hCover.Filename, ".")
-	//
-	if len(splits) != 2 {
-		fmt.Println("file error : ", "len is not 2 ", hCover.Filename)
-		this.Abort("403")
-		return
-	}
-	CoverUrl := "static/img/" + builder.String() + "." + splits[1]
+
+	CoverUrl := "static/img/" + builder.String() + imageFileName
+	fmt.Println("imageFileName ", imageFileName)
 	// dp 保存数据信息
 
 	// 保存图片文件..
 	err = this.SaveToFile("cover", CoverUrl) // 保存位置在 static/upload, 没有文件夹要先创建
 	if err != nil {
 		fmt.Println("save file error ", err)
-		this.Abort("403")
+		this.Data["json"] = missErr
+		this.ServeJSON(true)
 		return
 	}
 
@@ -229,27 +236,25 @@ func (this *BookOps) CommitBookInfo() {
 		return
 	}
 	defer pdfFile.Close()
-
+	pdfSuf := path.Base(pdfHeader.Filename)
+	if ! strings.HasSuffix(pdfSuf, ".pdf") {
+		fmt.Println("wen jian ming bu shi pdf", pdfSuf)
+		this.Data["json"] = paramsErr
+		this.ServeJSON(true)
+		return
+	}
 	hash.Reset()
 	hash.Write([]byte(time.Now().String()))
 	bytes = hash.Sum(nil)
 	builder.Reset()
 	fmt.Fprintf(&builder, "%x", bytes)
 
-	splits = strings.Split(pdfHeader.Filename, ".")
-	//
-	if len(splits) != 2 {
-		fmt.Println("file error : ", "len is not 2 ")
-		this.Abort("403")
-		return
-	}
-
-	pdfUrl := "static/upload/" + builder.String() + "." + splits[1]
-	// 保存 上传的文件资源
+	pdfUrl := "static/upload/" + builder.String() + ".pdf" // 保存 上传的文件资源
 	err = this.SaveToFile("pdf", pdfUrl)
 	if err != nil {
 		fmt.Println("err save pdf err ")
-		this.Abort("403")
+		this.Data["json"] = missErr
+		this.ServeJSON(true)
 		return
 	}
 
@@ -258,13 +263,18 @@ func (this *BookOps) CommitBookInfo() {
 	id, err := dp.Insert()
 	if err != nil {
 		fmt.Println("err:", err)
-		this.Abort("403")
+		this.Data["json"] = missErr
+		this.ServeJSON(true)
 		return
 	}
 
 	fmt.Println("ok ", dp)
 	dp.Id = id
-	this.Data["json"] = dp
+	this.Data["json"] = models.MessageResponse{
+		Code:    200,
+		Message: dp,
+	}
+
 	this.ServeJSON(true)
 
 }
@@ -474,7 +484,7 @@ func (this *BookOps) CreateBookList() {
 		Publish     bool   `json:"publish"`
 		TypeId      int    `json:"type_id"`
 	}{}
-
+	fmt.Println("body ", string(this.Ctx.Input.RequestBody))
 	err := json.Unmarshal(this.Ctx.Input.RequestBody, &dp)
 
 	// 反序列化用户提交书籍
@@ -500,7 +510,7 @@ func (this *BookOps) CreateBookList() {
 	bookList.Name = dp.Name
 	bookList.Publish = dp.Publish
 	if len(bookList.Name) == 0 || dp.TypeId == 0 {
-		fmt.Println("提取的用户数据有误", dp )
+		fmt.Println("提取的用户数据有误", dp)
 		this.Data["json"] = paramsErr
 		this.ServeJSON(true)
 		return
@@ -562,7 +572,7 @@ func (this *BookOps) FetchOwnBookList() {
 		return
 	}
 	fmt.Println("read n ", n)
-	this.Data["json"] = dp
+	this.Data["json"] = models.MessageResponse{Code: 200, Message: dp}
 	this.ServeJSON(true)
 	return
 }
@@ -592,9 +602,9 @@ func (this *BookOps) CreateBookInfoComment() {
 	err = json.Unmarshal(this.Ctx.Input.RequestBody, &dp)
 
 	fmt.Println(dp)
-	if err != nil  || len(dp.Content) == 0 {
-		fmt.Println("parse CreateBookInfoComment err 获取提交的内容有无", err, dp )
-		this.Data["json"] =paramsErr
+	if err != nil || len(dp.Content) == 0 {
+		fmt.Println("parse CreateBookInfoComment err 获取提交的内容有无", err, dp)
+		this.Data["json"] = paramsErr
 		this.ServeJSON(true)
 
 		return
@@ -602,7 +612,6 @@ func (this *BookOps) CreateBookInfoComment() {
 
 	// 赋值用户Id
 	dp.UserInfoId = user.Id
-
 
 	bookInfoComment := models.BookInfoComment{
 		UserInfo:    &models.User{Id: dp.UserInfoId},
@@ -621,7 +630,7 @@ func (this *BookOps) CreateBookInfoComment() {
 	bookInfoComment.UserInfo = &user
 
 	// 返回用户评论的内容
-	this.Data["json"] = models.MessageResponse{Code:200,Message:bookInfoComment}
+	this.Data["json"] = models.MessageResponse{Code: 200, Message: bookInfoComment}
 	this.ServeJSON(true)
 	fmt.Println("id ", id, "bookInfoComment ", bookInfoComment)
 
@@ -646,17 +655,17 @@ func (this *BookOps) FetchBookInfoComments() {
 
 	//var bookInfoComments []*models.BookInfoComment
 
-	var bookInfoComments []*struct {
-		Id           int64 `json:"id"`
-		Content      string
-		ScanTimes    int `json:"scan_times"`
-		PublishTime  time.Time
-		Author       string
-		Username     string
-		Link         string
-		Introduction string
-		UserInfoId   int64 `json:"user_info_id"`
-		BookInfoId   int64 `json:"book_info_id"`
+	var bookInfoComments []struct {
+		Id           int64     `json:"id"`
+		Content      string    `json:"content"`
+		ScanTimes    int       `json:"scan_times"`
+		PublishTime  time.Time `json:"publish_time"`
+		Author       string    `json:"author"`
+		Username     string    `json:"username"`
+		Link         string    `json:"link"`
+		Introduction string    `json:"introduction"`
+		UserInfoId   int64     `json:"user_info_id"`
+		BookInfoId   int64     `json:"book_info_id"`
 	}
 
 	n, err := orm.NewOrm().Raw(
@@ -664,7 +673,7 @@ func (this *BookOps) FetchBookInfoComments() {
 			"T0.content,"+
 			"T0.scan_times ,"+
 			"T0.publish_time,"+
-			"T1.id  as user_info_id ,T1.username,"+
+			"T1.id  as user_info_id ,T1.username AS username ,"+
 			"T2.id as book_info_id,T2.link,"+
 			"T2.content_legal,"+
 			"T2.publish_time,"+
@@ -685,10 +694,10 @@ func (this *BookOps) FetchBookInfoComments() {
 		this.ServeJSON(true)
 		return
 	}
-	fmt.Println(n)
+	fmt.Printf("num = %+v data = %+v \n", n, bookInfoComments)
 	this.Data["json"] = models.MessageResponse{
-		Code :200,
-		Message:bookInfoComments,
+		Code:    200,
+		Message: bookInfoComments,
 	}
 	this.ServeJSON(true)
 	return
@@ -808,7 +817,7 @@ func (this *BookOps) FetchBooksByBookListId() {
 		"WHERE T0.id = T2.book_info_id AND T1.id = t2.book_list_id AND T1.id = ?"
 	i, e := orm.NewOrm().Raw(sql, bkId).QueryRows(&bk)
 	fmt.Println(i, e)
-	this.Data["json"] = models.MessageResponse{Code:200,Message:bk }
+	this.Data["json"] = models.MessageResponse{Code: 200, Message: bk}
 	this.ServeJSON(true)
 
 }
@@ -817,25 +826,59 @@ func (this *BookOps) FetchBooksByBookListId() {
 func (this *BookOps) FetchRecommendBooks() {
 	typeId, err := this.GetInt64("typeId", -1)
 	if err != nil {
-		this.Abort("403")
+		this.Data["json"] = paramsErr
+		this.ServeJSON(true)
+		return
+
 	}
 	fmt.Println("typeName ", typeId)
 
-	var recommends []*models.BookInfo
+	cm := []struct {
+		Id           int64     `json:"id"`
+		Name         string    `json:"name"`
+		DateTime     time.Time `json:"date_time"`
+		Reviews      int       `json:"reviews"`
+		Type         string    `json:"type"`
+		ReviewsScore float64   `json:"reviews_score"`
+		Link         string    `json:"link"`
+		Author       string    `json:"author"`
+		Url          string    `json:"url"`
+		CopyRight    string    `json:"copy_right"`
+		Cover        string    `json:"cover"`
+		SaveName     string    `json:"save_name"`
+	}{}
 
-	i, err := orm.NewOrm().Raw(
-		`SELECT T0.id ,
-T0.link ,
-T0.author ,
-T0.audit_time, 
-T0.download_times ,
-T0.publish_time,
-T0.save_name,
-T0.reward 
-FROM book_info T0 where T0.book_type_id = ? order by publish_time DESC LIMIT 10`, typeId).QueryRows(&recommends)
+	var sql string
+	if typeId == -1 {
+		sql = "SELECT T0.id , T0.name , T0.publish_time AS date_time , T0.copyright ," +
+			"T0.cover , T0.reward , T0.save_name , T1.name AS type FROM  book_info AS T0 ,book_type AS T1 WHERE T0.book_type_id = T1.id  order by publish_time DESC LIMIT 10"
+
+	} else {
+		sql = "SELECT T0.id , T0.name , T0.publish_time AS date_time , T0.copyright ," +
+			"T0.cover , T0.reward , T0.save_name , T1.name AS type FROM  book_info AS T0 ,book_type AS T1 WHERE T0.book_type_id = T1.id AND T1.id = ? order by publish_time DESC LIMIT 10"
+	}
+	//param:=typeId == -1 ? nil : typeId
+	var i int64
+	if typeId == -1 {
+		i, err = orm.NewOrm().Raw(
+			sql, ).QueryRows(&cm)
+	} else {
+		i, err = orm.NewOrm().Raw(
+			sql, typeId).QueryRows(&cm)
+	}
+
+	if err != nil {
+		fmt.Println("err : ", err)
+		this.Data["json"] = paramsErr
+		this.ServeJSON(true)
+		return
+	}
 	fmt.Println(i, err)
 
-	this.Data["json"] = recommends
+	this.Data["json"] = models.MessageResponse{
+		Code:    200,
+		Message: cm,
+	}
 	this.ServeJSON(true)
 }
 
@@ -887,7 +930,59 @@ func (this *BookOps) BookListTypes() {
 		return
 	}
 	fmt.Println("query data num : ", n)
-	this.Data["json"] = bookListTypes
+	// 重新修改数据
+	this.Data["json"] = models.MessageResponse{Code: 200, Message: bookListTypes}
 	this.ServeJSON(true)
 	return
+}
+
+// 测试 通过 2019年3月12日18点03分
+//
+// 用户获取自己的 发布的全部书籍
+func (this *BookOps) OwnBookInfos() {
+	authorization := this.Ctx.Input.Header("authorization")
+	user, ok := gJwt[authorization]
+	if !ok {
+		fmt.Println("user not load ")
+		// 登录过期
+		this.Data["json"] = loginOutTime
+		this.ServeJSON(true)
+		this.StopRun()
+		return
+
+	}
+
+	// sql
+	sql := "SELECT T0.id , T0.name , T0.link , T0.user_info_id, T0.copyright, T0.cover, T0.publish_time AS date_time , T0.reward , T0.author, T0.save_name , T1.name AS type,T0.save_name FROM book_info AS T0, book_type AS T1 WHERE T0.user_info_id =? AND T0.book_type_id= T1.id";
+	cm := []struct {
+		Id           int64     `json:"id"`
+		Name         string    `json:"name"`
+		DateTime     time.Time `json:"date_time"`
+		Reviews      int       `json:"reviews"`
+		Type         string    `json:"type"`
+		ReviewsScore float64   `json:"reviews_score"`
+		Link         string    `json:"link"`
+		Author       string    `json:"author"`
+		Url          string    `json:"url"`
+		CopyRight    string    `json:"copy_right"`
+		Cover        string    `json:"cover"`
+		SaveName     string    `json:"save_name"`
+	}{}
+
+	i, err := orm.NewOrm().Raw(sql, user.Id).QueryRows(&cm)
+	if err != nil {
+		fmt.Println("err : ", err)
+		this.Data ["json"] = missErr
+		this.ServeJSON(true)
+		return
+	}
+	fmt.Println("read ", i)
+	this.Data["json"] = models.MessageResponse{
+		Code:    200,
+		Message: cm,
+	}
+
+	this.ServeJSON(true)
+	return
+
 }

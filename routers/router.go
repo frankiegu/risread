@@ -57,6 +57,9 @@ func init() {
 
 			// 获取书单类型的消息
 			beego.NSRouter("/bookListTypes",&controllers.BookOps{},"get:BookListTypes"),
+
+			// 用户自己发布的书籍总览
+			beego.NSRouter("/ownbookinfos",&controllers.BookOps{}, "get:OwnBookInfos"),
 		),
 
 	)
